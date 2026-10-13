@@ -1,0 +1,83 @@
+{
+  "updated": "2026-10-13T22:18:33+00:00",
+  "log": [
+    {
+      "market": "COPPER",
+      "source": "yfinance:HG=F",
+      "status": "ok",
+      "last": "2026-10-13",
+      "value": 6.7315
+    },
+    {
+      "market": "ZINC",
+      "source": "metalcharts:zinc",
+      "status": "error: METALCHARTS_API_KEY not set"
+    },
+    {
+      "market": "ZINC",
+      "source": "fred:PZINCUSDM",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    },
+    {
+      "market": "TIN",
+      "source": "metalcharts:tin",
+      "status": "error: METALCHARTS_API_KEY not set"
+    },
+    {
+      "market": "TIN",
+      "source": "fred:PTINUSDM",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    },
+    {
+      "market": "LEAD",
+      "source": "metalcharts:lead",
+      "status": "error: METALCHARTS_API_KEY not set"
+    },
+    {
+      "market": "LEAD",
+      "source": "fred:PLEADUSDM",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    },
+    {
+      "market": "NATGAS",
+      "source": "yfinance:NG=F",
+      "status": "ok",
+      "last": "2026-10-13",
+      "value": 3.316
+    },
+    {
+      "market": "NATGAS",
+      "source": "fred:DHHNGSP",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    },
+    {
+      "market": "DIESEL",
+      "source": "yfinance:HO=F",
+      "status": "ok",
+      "last": "2026-10-13",
+      "value": 4.957
+    },
+    {
+      "market": "DIESEL",
+      "source": "fred:DDFUELNYH",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    },
+    {
+      "market": "BRENT",
+      "source": "yfinance:BZ=F",
+      "status": "ok",
+      "last": "2026-10-13",
+      "value": 106.290001
+    },
+    {
+      "market": "BRENT",
+      "source": "fred:DCOILBRENTEU",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    },
+    {
+      "market": "MFG_WAGES",
+      "source": "fred:CES3000000008",
+      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+    }
+  ]
+}
