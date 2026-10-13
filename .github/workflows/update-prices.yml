@@ -1,0 +1,45 @@
+name: Update market data
+
+on:
+  schedule:
+    - cron: "37 22 * * 1-5"   # weekdays 22:37 UTC = 6:37 pm Santo Domingo, after US futures settle
+  workflow_dispatch:           # "Run workflow" button for a manual update
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch prices
+        env:
+          METALCHARTS_API_KEY: ${{ secrets.METALCHARTS_API_KEY }}
+        run: python update_prices.py
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market_data.csv data/market_meta.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Market data $(date -u +%F)"
+            git push
+          fi
