@@ -29,41 +29,68 @@ import streamlit as st
 # Constants
 # =============================================================================
 APP_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = APP_DIR / "index_config.json"
+CONFIG_PATH = APP_DIR / "index_config.json"   # local app state (weights, manual prices); not in git
 PRICES_PATH = APP_DIR / "price_history.csv"
+DATA_DIR = APP_DIR / "data"                     # market data, written by the nightly GitHub job
+MARKET_PATH = DATA_DIR / "market_data.csv"
+MARKET_META_PATH = DATA_DIR / "market_meta.json"
+MARKET_BACKFILL_DAYS = 420
+METALCHARTS_URL = "https://metalcharts.org"
 
 INDEX_NAME = "Copper-Brass Radiator Cost Index"
 TICKER = "CBRI"
 BASE_LEVEL = 100.0
 HISTORY_DAYS = 365
 LB_PER_T = 2204.62262
-LIVE_REFRESH_HOURS = 6
 PALETTE = ["#C8743B", "#C9A227", "#7C8A99", "#2F6F8F", "#4E8F5A", "#8E5BA8", "#B4505A", "#5B7DB4",
            "#9C6B3A", "#3E9C9C"]
 
-# Default basket. "live" tells the optional live-data refresh how to build each price:
-#   alloy  -> sum(share * price * factor)  (mass fractions, all in USD/t), also used for single series
-#   basket -> 100 * sum(share * price / price_at_start)  (cost shares of unlike units)
+# Raw markets, fetched by the nightly job. Sources are in priority order: the first one with a value
+# for a date wins, later ones fill the gaps (e.g. MetalCharts daily spot, backfilled by IMF monthly).
+# "factor" converts each source into the market's unit. metalcharts tickers/factors are confirmed
+# against their API docs before use.
+MARKETS = {
+    "COPPER": dict(name="Copper, COMEX front month", unit="USD/lb",
+                   sources=[dict(source="yfinance", ticker="HG=F")]),
+    "ZINC": dict(name="Zinc", unit="USD/t",
+                 sources=[dict(source="metalcharts", ticker="zinc"), dict(source="fred", ticker="PZINCUSDM")]),
+    "TIN": dict(name="Tin", unit="USD/t",
+                sources=[dict(source="metalcharts", ticker="tin"), dict(source="fred", ticker="PTINUSDM")]),
+    "LEAD": dict(name="Lead", unit="USD/t",
+                 sources=[dict(source="metalcharts", ticker="lead"), dict(source="fred", ticker="PLEADUSDM")]),
+    "NATGAS": dict(name="Natural gas, Henry Hub", unit="USD/MMBtu",
+                   sources=[dict(source="yfinance", ticker="NG=F"), dict(source="fred", ticker="DHHNGSP")]),
+    "DIESEL": dict(name="ULSD diesel, NY Harbor", unit="USD/gal",
+                   sources=[dict(source="yfinance", ticker="HO=F"), dict(source="fred", ticker="DDFUELNYH")]),
+    "BRENT": dict(name="Brent crude", unit="USD/bbl",
+                  sources=[dict(source="yfinance", ticker="BZ=F"), dict(source="fred", ticker="DCOILBRENTEU")]),
+    "MFG_WAGES": dict(name="US manufacturing avg hourly earnings", unit="USD/hr",
+                      sources=[dict(source="fred", ticker="CES3000000008")]),
+}
+
+# Default basket. "live" says how to build each component's price from the markets above:
+#   alloy  -> sum(share * market * factor)  (mass fractions, all in USD/t), also used for single markets
+#   basket -> 100 * sum(share * market / market_at_base_date)  (cost shares of unlike units)
 DEFAULT_COMPONENTS = {
     "Copper": dict(
         unit="USD/t", description="Fin strip and tube stock (C11000/C12200). Proxy: COMEX HG copper.",
-        live=dict(method="alloy", parts=[dict(source="yfinance", ticker="HG=F", factor=LB_PER_T, share=1.0)])),
+        live=dict(method="alloy", parts=[dict(market="COPPER", factor=LB_PER_T, share=1.0)])),
     "Brass": dict(
         unit="USD/t", description="Header plates, tanks, side plates (CuZn35-37), priced as 65% Cu + 35% Zn.",
-        live=dict(method="alloy", parts=[dict(source="yfinance", ticker="HG=F", factor=LB_PER_T, share=0.65),
-                                         dict(source="fred", ticker="PZINCUSDM", factor=1.0, share=0.35)])),
+        live=dict(method="alloy", parts=[dict(market="COPPER", factor=LB_PER_T, share=0.65),
+                                         dict(market="ZINC", factor=1.0, share=0.35)])),
     "Solder": dict(
         unit="USD/t", description="Pb-Sn solder, 70/30 by mass, for tube-to-header and tank joints.",
-        live=dict(method="alloy", parts=[dict(source="fred", ticker="PLEADUSDM", factor=1.0, share=0.70),
-                                         dict(source="fred", ticker="PTINUSDM", factor=1.0, share=0.30)])),
+        live=dict(method="alloy", parts=[dict(market="LEAD", factor=1.0, share=0.70),
+                                         dict(market="TIN", factor=1.0, share=0.30)])),
     "Energy": dict(
         unit="basket pts", description="45% natural gas (ovens), 35% diesel (freight), 20% Brent (oil-linked inputs).",
-        live=dict(method="basket", parts=[dict(source="fred", ticker="DHHNGSP", share=0.45),
-                                          dict(source="fred", ticker="DDFUELNYH", share=0.35),
-                                          dict(source="fred", ticker="DCOILBRENTEU", share=0.20)])),
+        live=dict(method="basket", parts=[dict(market="NATGAS", share=0.45),
+                                          dict(market="DIESEL", share=0.35),
+                                          dict(market="BRENT", share=0.20)])),
     "Labor": dict(
         unit="USD/hr", description="Direct wages. Proxy: BLS manufacturing avg hourly earnings (CES3000000008).",
-        live=dict(method="alloy", parts=[dict(source="fred", ticker="CES3000000008", factor=1.0, share=1.0)])),
+        live=dict(method="alloy", parts=[dict(market="MFG_WAGES", factor=1.0, share=1.0)])),
 }
 DEFAULT_WEIGHTS = {"Copper": 42.0, "Brass": 20.0, "Solder": 8.0, "Energy": 10.0, "Labor": 20.0}
 
@@ -81,11 +108,17 @@ ES = {
         "índice diario de costo de cobre, latón, soldadura, energía y mano de obra para un radiador "
         "de cobre-latón de servicio pesado",
     "base {date} = {level}": "base {date} = {level}",
-    "Demo data: {names} {verb} simulated. Use **Refresh live data** in the sidebar, or upload your own prices.":
-        "Datos de demostración: {names} {verb} simulados. Use **Actualizar datos de mercado** en la barra "
-        "lateral, o cargue sus propios precios.",
+    "Demo data: {names} {verb} simulated until the nightly market-data job has run, or upload your own prices.":
+        "Datos de demostración: {names} {verb} simulados hasta que corra la actualización nocturna de datos "
+        "de mercado, o cargue sus propios precios.",
+    "Metal prices by [MetalCharts]({u}).": "Precios de metales por [MetalCharts]({u}).",
+    "#### Market data sources": "#### Fuentes de datos de mercado",
+    "market": "mercado", "last date": "última fecha", "last value": "último valor", "source": "fuente",
+    "Each market uses its first source with a value for that day; later sources fill gaps. "
+    "Zinc, tin and lead fall back to IMF monthly averages before daily data exists.":
+        "Cada mercado usa su primera fuente con valor para ese día; las siguientes llenan los huecos. "
+        "Zinc, estaño y plomo usan promedios mensuales del FMI antes de que existan datos diarios.",
     "is": "está", "are": "están",
-    "Refreshing live market data...": "Actualizando datos de mercado...",
     "The index could not be computed: {e}": "No se pudo calcular el índice: {e}",
     # --- components, units, data status ---
     "Copper": "Cobre", "Brass": "Latón", "Solder": "Soldadura", "Energy": "Energía", "Labor": "Mano de obra",
@@ -205,13 +238,11 @@ ES = {
     "Reference cost per radiator at base ($)": "Costo de referencia por radiador en la base ($)",
     "Turns index points into dollars: implied cost = U x I / 100.":
         "Convierte puntos del índice en dólares: costo implícito = U x I / 100.",
-    "Auto-refresh live market data": "Actualizar datos de mercado automáticamente",
-    "Pulls FRED / Yahoo data at most every {h} h on page load.":
-        "Descarga datos de FRED / Yahoo como máximo cada {h} h al cargar la página.",
-    "Refresh live data now": "Actualizar datos de mercado ahora",
-    "Fetching FRED / Yahoo...": "Descargando FRED / Yahoo...",
-    "Live refresh finished.": "Actualización de mercado terminada.",
-    "Base date {b} = {l}. Last live refresh: {r}.": "Fecha base {b} = {l}. Última actualización de mercado: {r}.",
+    "Base date {b} = {l}. Market data is updated every weekday evening by the GitHub job. Last update: {r}.":
+        "Fecha base {b} = {l}. Los datos de mercado se actualizan cada día hábil en la noche con la tarea de "
+        "GitHub. Última actualización: {r}.",
+    "{n} source(s) failed in the last update; their backup source was used.":
+        "{n} fuente(s) fallaron en la última actualización; se usó su fuente de respaldo.",
     "never": "nunca",
     "Download index_config.json": "Descargar index_config.json",
     "Download price_history.csv": "Descargar price_history.csv",
@@ -342,7 +373,7 @@ def new_default_config(base_date: pd.Timestamp) -> dict:
         comps[name] = dict(spec, color=PALETTE[i % len(PALETTE)], seed=None)
     return dict(
         index_name=INDEX_NAME, ticker=TICKER, base_date=str(base_date.date()), base_level=BASE_LEVEL,
-        reference_unit_cost=1000.0, auto_live=False, last_live_refresh=None,
+        reference_unit_cost=1000.0,
         components=comps,
         data_status={n: "simulated" for n in comps},
         versions=[dict(id=1, effective_date=str(base_date.date()), weights=dict(DEFAULT_WEIGHTS),
@@ -397,16 +428,24 @@ def load_state() -> tuple[dict, pd.DataFrame]:
         prices = pd.DataFrame(index=history_calendar())
         if pd.Timestamp(cfg["base_date"]) < prices.index[0]:
             cfg["base_date"] = str(prices.index[0].date())
+    migrated = False
+    for name, comp in cfg["components"].items():  # migrate recipes saved by older versions of the app
+        live = comp.get("live") or {}
+        if name in DEFAULT_COMPONENTS and any("market" not in p for p in live.get("parts", [])):
+            comp["live"] = DEFAULT_COMPONENTS[name]["live"]
+            migrated = True
+    for old_key in ("auto_live", "last_live_refresh"):
+        migrated |= cfg.pop(old_key, None) is not None
     before = set(prices.columns)
     prices = ensure_columns(cfg, prices)
-    if set(prices.columns) != before or not PRICES_PATH.exists():
+    if migrated or set(prices.columns) != before or not PRICES_PATH.exists():
         save_prices(prices)
         save_config(cfg)
     return cfg, prices
 
 
 # =============================================================================
-# Optional live data (FRED needs no key; Yahoo via yfinance is unofficial)
+# Market data: fetched by the nightly job (update_prices.py), read by the app
 # =============================================================================
 def fetch_fred(ticker: str, start: str) -> pd.Series:
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={ticker}&cosd={start}"
@@ -428,50 +467,145 @@ def fetch_yfinance(ticker: str, start: str) -> pd.Series:
     if isinstance(close, pd.DataFrame):
         close = close.iloc[:, 0]
     idx = close.index.tz_localize(None) if close.index.tz is not None else close.index
-    return pd.Series(close.values, index=pd.DatetimeIndex(idx)).dropna().sort_index()
+    return pd.Series(close.values, index=pd.DatetimeIndex(idx).normalize()).dropna().sort_index()
 
 
-def refresh_live(cfg: dict, prices: pd.DataFrame) -> tuple[pd.DataFrame, list[dict]]:
-    today = pd.Timestamp(dt.date.today())
-    start = min(pd.Timestamp(cfg["base_date"]), today - pd.Timedelta(days=HISTORY_DAYS))
-    fetch_start = (start - pd.Timedelta(days=150)).strftime("%Y-%m-%d")
-    cache, raw, log, last_obs = {}, {}, [], []
+def fetch_metalcharts(ticker: str, start: str) -> pd.Series:
+    """MetalCharts spot price (free tier: today's value only, no history).
+    Needs METALCHARTS_API_KEY. The endpoint is wired in once the request format from their docs is confirmed."""
+    if not get_secret("METALCHARTS_API_KEY"):
+        raise RuntimeError("METALCHARTS_API_KEY not set")
+    raise NotImplementedError("MetalCharts request format not configured yet")
 
-    def get(part):
-        key = (part["source"], part["ticker"])
-        if key not in cache:
-            cache[key] = fetch_fred(part["ticker"], fetch_start) if part["source"] == "fred" \
-                else fetch_yfinance(part["ticker"], fetch_start)
-        return cache[key]
 
+FETCHERS = {"fred": fetch_fred, "yfinance": fetch_yfinance, "metalcharts": fetch_metalcharts}
+
+
+def source_col(market: str, src: dict) -> str:
+    return f"{market}|{src['source']}:{src['ticker']}"
+
+
+def read_market_data(path: Path = MARKET_PATH) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path, index_col="date", parse_dates=["date"]).sort_index()
+
+
+def read_market_meta(path: Path = MARKET_META_PATH) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def update_market_data(path: Path = MARKET_PATH, meta_path: Path = MARKET_META_PATH, today=None) -> list[dict]:
+    """Fetch every market source and upsert it into data/market_data.csv (one column per source).
+    History-capable sources re-pull the last 30 days to catch revisions; spot-only sources add today."""
+    today = pd.Timestamp(today or dt.date.today()).normalize()
+    raw = read_market_data(path)
+    log = []
+    for market, spec in MARKETS.items():
+        for src in spec["sources"]:
+            col = source_col(market, src)
+            have = raw[col].dropna() if col in raw.columns else pd.Series(dtype=float)
+            start = (have.index.max() - pd.Timedelta(days=30)) if len(have) else today - pd.Timedelta(days=MARKET_BACKFILL_DAYS)
+            try:
+                s = FETCHERS[src["source"]](src["ticker"], start.strftime("%Y-%m-%d"))
+                s = s[s.index <= today].dropna()
+                if s.empty:
+                    raise RuntimeError("no observations returned")
+                raw = raw.reindex(raw.index.union(s.index))
+                if col not in raw.columns:
+                    raw[col] = np.nan
+                raw.loc[s.index, col] = s.values
+                log.append(dict(market=market, source=f"{src['source']}:{src['ticker']}", status="ok",
+                                last=str(s.index.max().date()), value=round(float(s.iloc[-1]), 6)))
+            except Exception as e:
+                log.append(dict(market=market, source=f"{src['source']}:{src['ticker']}",
+                                status=f"error: {str(e)[:160]}"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw.sort_index().rename_axis("date").to_csv(path, float_format="%.6f")
+    meta_path.write_text(json.dumps(dict(updated=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                                         log=log), indent=2))
+    return log
+
+
+def market_series(raw: pd.DataFrame, market: str) -> tuple[pd.Series, pd.Series]:
+    """Merged daily-or-better series for one market, plus which source supplied each date."""
+    vals, used = pd.Series(dtype=float), pd.Series(dtype=object)
+    for src in MARKETS[market]["sources"]:
+        col = source_col(market, src)
+        if col not in raw.columns:
+            continue
+        s = raw[col].dropna() * float(src.get("factor", 1.0))
+        new = s.index.difference(vals.index)
+        vals = pd.concat([vals, s.loc[new]]).sort_index()
+        used = pd.concat([used, pd.Series(src["source"], index=new)]).sort_index()
+    return vals, used
+
+
+def build_live_prices(cfg: dict, raw: pd.DataFrame) -> pd.DataFrame:
+    """Component prices on a business-day calendar, built from the stored market data."""
+    merged = {m: market_series(raw, m)[0] for m in MARKETS}
+    merged = {m: s for m, s in merged.items() if len(s)}
+    if not merged:
+        return pd.DataFrame()
+    cal = pd.bdate_range(min(s.index.min() for s in merged.values()), max(s.index.max() for s in merged.values()))
+    daily = {m: s.reindex(s.index.union(cal)).ffill().reindex(cal) for m, s in merged.items()}
+    base = pd.Timestamp(cfg["base_date"])
+    out = pd.DataFrame(index=cal)
     for name, comp in cfg["components"].items():
         spec = comp.get("live")
-        if not spec:
+        if not spec or any(p.get("market") not in daily for p in spec["parts"]):
             continue
-        try:
-            raw[name] = [(p, get(p)) for p in spec["parts"]]
-            last_obs += [s.index.max() for _, s in raw[name]]
-        except Exception as e:
-            log.append(dict(component=name, status=f"error: {str(e)[:120]}"))
-    if not raw:
-        return prices, log
-
-    cal = pd.bdate_range(start, min(max(last_obs), today))
-    new = prices.reindex(prices.index.union(cal)).ffill().bfill().reindex(cal)
-    for name, parts in raw.items():
-        spec = cfg["components"][name]["live"]
-        aligned = [(p, s.reindex(s.index.union(cal)).ffill().reindex(cal)) for p, s in parts]
         if spec["method"] == "basket":
-            val = 100 * sum(p["share"] * s / s.iloc[0] for p, s in aligned)
+            val = 0.0
+            for p in spec["parts"]:
+                m = daily[p["market"]]
+                ref = m.loc[:base].dropna()
+                ref = ref.iloc[-1] if len(ref) else m.dropna().iloc[0]
+                val = val + 100 * p["share"] * m / ref
         else:
-            val = sum(p["share"] * p.get("factor", 1.0) * s for p, s in aligned)
-        if val.isna().any():
-            log.append(dict(component=name, status="error: a source has no data at the start of the window"))
+            val = sum(p["share"] * p.get("factor", 1.0) * daily[p["market"]] for p in spec["parts"])
+        out[name] = val
+    return out
+
+
+def overlay_live(cfg: dict, prices: pd.DataFrame) -> pd.DataFrame:
+    """Replace simulated/stored prices with market data for every component that has a live recipe.
+    Components set to 'manual' (your own uploaded prices) are left alone."""
+    raw = read_market_data()
+    if raw.empty:
+        return prices
+    live = build_live_prices(cfg, raw).dropna(how="all")
+    if live.empty:
+        return prices
+    end = max(prices.index.max(), live.index.max())
+    cal = prices.index.union(pd.bdate_range(prices.index.min(), end))
+    out = prices.reindex(cal).ffill()
+    for name in live.columns:
+        if cfg["data_status"].get(name) == "manual":
             continue
-        new[name] = val.round(6)
+        s = live[name].dropna()
+        merged = s.reindex(cal).combine_first(out[name]) if name in out else s.reindex(cal)
+        out[name] = merged.ffill()
         cfg["data_status"][name] = "live"
-        log.append(dict(component=name, status="ok", last=str(val.index[-1].date()), value=round(val.iloc[-1], 4)))
-    return new, log
+    return out
+
+
+def market_status(raw: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for m, spec in MARKETS.items():
+        vals, used = market_series(raw, m)
+        rows.append({"market": spec["name"], "unit": spec["unit"],
+                     "last date": vals.index.max().date() if len(vals) else None,
+                     "last value": round(float(vals.iloc[-1]), 4) if len(vals) else None,
+                     "source": used.iloc[-1] if len(used) else None})
+    return pd.DataFrame(rows)
+
+
+def uses_metalcharts(raw: pd.DataFrame) -> bool:
+    return any(c.split("|")[1].startswith("metalcharts:") and raw[c].notna().any() for c in raw.columns if "|" in c)
 
 
 # =============================================================================
@@ -823,6 +957,14 @@ def page_methodology(cfg, periods):
     if cfg.get("archived_versions"):
         with st.expander(t("Archived (superseded) versions")):
             st.json(cfg["archived_versions"], expanded=False)
+    raw = read_market_data()
+    if not raw.empty:
+        st.markdown(t("#### Market data sources"))
+        ms = market_status(raw)
+        ms.columns = [t(c) for c in ms.columns]
+        st.dataframe(ms, hide_index=True, width="stretch")
+        st.caption(t("Each market uses its first source with a value for that day; later sources fill gaps. "
+                     "Zinc, tin and lead fall back to IMF monthly averages before daily data exists."))
     st.markdown(t("#### Components"))
     st.dataframe(pd.DataFrame([{t("component"): t(n), t("unit"): t(c.get("unit", "")),
                                 t("data"): t(cfg["data_status"].get(n, "")),
@@ -1018,21 +1160,15 @@ def sidebar_admin(cfg: dict, prices: pd.DataFrame):
         if U != cfg.get("reference_unit_cost"):
             cfg["reference_unit_cost"] = U
             commit(cfg)
-        auto = st.checkbox(t("Auto-refresh live market data"), value=bool(cfg.get("auto_live")),
-                           help=t("Pulls FRED / Yahoo data at most every {h} h on page load.", h=LIVE_REFRESH_HOURS))
-        if auto != bool(cfg.get("auto_live")):
-            cfg["auto_live"] = auto
-            commit(cfg)
-        if st.button(t("Refresh live data now")):
-            with st.spinner(t("Fetching FRED / Yahoo...")):
-                new_prices, log = refresh_live(cfg, prices)
-            cfg["last_live_refresh"] = now_iso()
-            st.session_state["live_log"] = log
-            commit(cfg, new_prices, t("Live refresh finished."))
-        if st.session_state.get("live_log"):
-            st.dataframe(pd.DataFrame(st.session_state["live_log"]), hide_index=True)
-        st.caption(t("Base date {b} = {l}. Last live refresh: {r}.", b=fdate(cfg["base_date"]),
-                     l=f"{cfg.get('base_level', BASE_LEVEL):g}", r=cfg.get("last_live_refresh") or t("never")))
+        meta = read_market_meta()
+        st.caption(t("Base date {b} = {l}. Market data is updated every weekday evening by the GitHub job. "
+                     "Last update: {r}.", b=fdate(cfg["base_date"]), l=f"{cfg.get('base_level', BASE_LEVEL):g}",
+                     r=fdate(meta["updated"], "%d %b %Y %H:%M UTC") if meta.get("updated") else t("never")))
+        if meta.get("log"):
+            errs = [r for r in meta["log"] if r.get("status") != "ok"]
+            if errs:
+                st.warning(t("{n} source(s) failed in the last update; their backup source was used.", n=len(errs)))
+                st.dataframe(pd.DataFrame(errs)[["market", "source", "status"]], hide_index=True)
         st.download_button(t("Download index_config.json"), json.dumps(cfg, indent=2, default=str).encode(),
                            "index_config.json", "application/json")
         st.download_button(t("Download price_history.csv"), prices.rename_axis("date").to_csv().encode(),
@@ -1072,26 +1208,12 @@ def set_prices(prices: pd.DataFrame, comp: str, s: pd.Series) -> pd.DataFrame:
 # =============================================================================
 # Main
 # =============================================================================
-def maybe_auto_refresh(cfg, prices):
-    if not cfg.get("auto_live") or os.environ.get("CBRI_OFFLINE") == "1":
-        return prices
-    last = cfg.get("last_live_refresh")
-    if last and dt.datetime.now() - dt.datetime.fromisoformat(last) < dt.timedelta(hours=LIVE_REFRESH_HOURS):
-        return prices
-    with st.spinner(t("Refreshing live market data...")):
-        prices, log = refresh_live(cfg, prices)
-    cfg["last_live_refresh"] = now_iso()  # recorded even on failure so a dead feed doesn't retry every run
-    save_config(cfg)
-    save_prices(prices)
-    return prices
-
-
 def main():
     init_language()
     st.set_page_config(page_title=t(INDEX_NAME), page_icon="📈", layout="wide")
     language_switch()
     cfg, prices = load_state()
-    prices = maybe_auto_refresh(cfg, prices)
+    prices = overlay_live(cfg, prices)
 
     st.title(t(cfg.get("index_name", INDEX_NAME)))
     st.caption(f"{TICKER} · " + t("daily cost index of copper, brass, solder, energy and labor for a heavy-duty "
@@ -1104,7 +1226,7 @@ def main():
     weighted = [n for n, w in current_weights(cfg).items() if w > 0]
     simulated = [n for n in weighted if cfg["data_status"].get(n) == "simulated"]
     if simulated:
-        st.info(t("Demo data: {names} {verb} simulated. Use **Refresh live data** in the sidebar, "
+        st.info(t("Demo data: {names} {verb} simulated until the nightly market-data job has run, "
                   "or upload your own prices.",
                   names=", ".join(t(n) for n in simulated), verb=t("is") if len(simulated) == 1 else t("are")),
                 icon="🧪")
@@ -1123,6 +1245,8 @@ def main():
         page_dashboard(cfg, prices, index, contrib.loc[index.index], eff_w.loc[index.index], periods)
     with tab_method:
         page_methodology(cfg, periods)
+    if uses_metalcharts(read_market_data()):
+        st.caption(t("Metal prices by [MetalCharts]({u}).", u=METALCHARTS_URL))
 
 
 if __name__ == "__main__":
