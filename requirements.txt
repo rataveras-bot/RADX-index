@@ -1,0 +1,6 @@
+streamlit>=1.45
+plotly>=5.20
+pandas>=2.1
+numpy>=1.26
+requests>=2.31
+yfinance>=0.2.50   # optional: only used for live COMEX copper (HG=F)
