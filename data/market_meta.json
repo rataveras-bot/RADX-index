@@ -16,7 +16,7 @@
     {
       "market": "ZINC",
       "source": "fred:PZINCUSDM",
-      "status": "error: 400 Client Error: Bad Request for url: https://api.stlouisfed.org/fred/series/observations?series_id=PZINCUSDM&api_key=e16784f10e5a8b3b47feb4ce08378a70+&file_ty"
+      "status": "error: 400 Client Error: Bad Request for url: https://api.stlouisfed.org/fred/series/observations?…"
     },
     {
       "market": "TIN",
