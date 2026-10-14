@@ -301,12 +301,31 @@ def now_iso() -> str:
 
 
 def get_secret(key: str, default=None):
+    """Secret from Streamlit secrets or the environment, with stray whitespace removed."""
+    val = None
     try:
         if key in st.secrets:
-            return st.secrets[key]
+            val = st.secrets[key]
     except Exception:
         pass
-    return os.environ.get(key, default)
+    if val is None:
+        val = os.environ.get(key, default)
+    return val.strip() if isinstance(val, str) else val
+
+
+SECRET_NAMES = ("FRED_API_KEY", "METALCHARTS_API_KEY", "ADMIN_PASSWORD")
+
+
+def redact(text: str) -> str:
+    """Remove secret values and URL query strings from text that may be saved or shown publicly."""
+    import re
+    text = re.sub(r"(https?://[^\s?]+)\?\S*", r"\1?…", str(text))
+    text = re.sub(r"(?i)(api_key|apikey|key|token)=[^&\s]+", r"\1=***", text)
+    for name in SECRET_NAMES:
+        val = get_secret(name)
+        if isinstance(val, str) and len(val) >= 6:
+            text = text.replace(val, "***")
+    return text
 
 
 # =============================================================================
@@ -565,7 +584,7 @@ def update_market_data(path: Path = MARKET_PATH, meta_path: Path = MARKET_META_P
                 if isinstance(e, requests.exceptions.RequestException):
                     down[src["source"]] = e
                 log.append(dict(market=market, source=f"{src['source']}:{src['ticker']}",
-                                status=f"error: {str(e)[:160]}"))
+                                status=f"error: {redact(e)[:160]}"))
     path.parent.mkdir(parents=True, exist_ok=True)
     raw.sort_index().rename_axis("date").to_csv(path, float_format="%.6f")
     meta_path.write_text(json.dumps(dict(updated=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
