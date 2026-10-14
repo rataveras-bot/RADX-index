@@ -17,6 +17,7 @@ import hmac
 import io
 import json
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -65,7 +66,8 @@ MARKETS = {
     "BRENT": dict(name="Brent crude", unit="USD/bbl",
                   sources=[dict(source="yfinance", ticker="BZ=F"), dict(source="fred", ticker="DCOILBRENTEU")]),
     "MFG_WAGES": dict(name="US manufacturing avg hourly earnings", unit="USD/hr",
-                      sources=[dict(source="fred", ticker="CES3000000008")]),
+                      sources=[dict(source="bls", ticker="CES3000000008"),
+                               dict(source="fred", ticker="CES3000000008")]),
 }
 
 # Default basket. "live" says how to build each component's price from the markets above:
@@ -447,15 +449,49 @@ def load_state() -> tuple[dict, pd.DataFrame]:
 # =============================================================================
 # Market data: fetched by the nightly job (update_prices.py), read by the app
 # =============================================================================
+def _get(url: str, tries: int = 3, timeout: int = 60, **kw) -> requests.Response:
+    """GET with retries and back-off; FRED in particular is slow to answer cloud servers."""
+    last = None
+    for i in range(tries):
+        try:
+            r = requests.get(url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0 (CBRI-index/1.0)"}, **kw)
+            r.raise_for_status()
+            return r
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if i < tries - 1:
+                time.sleep(5 * (i + 1))
+    raise last
+
+
 def fetch_fred(ticker: str, start: str) -> pd.Series:
-    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={ticker}&cosd={start}"
-    r = requests.get(url, timeout=30, headers={"User-Agent": "CBRI-index/1.0"})
-    r.raise_for_status()
-    df = pd.read_csv(io.StringIO(r.text)).iloc[:, :2]
-    df.columns = ["date", "value"]  # header is DATE or observation_date depending on FRED version
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    """FRED official API when FRED_API_KEY is set (reliable from cloud servers), else the public CSV."""
+    key = get_secret("FRED_API_KEY")
+    if key:
+        r = _get("https://api.stlouisfed.org/fred/series/observations",
+                 params=dict(series_id=ticker, api_key=key, file_type="json", observation_start=start))
+        obs = r.json().get("observations", [])
+        df = pd.DataFrame(obs, columns=["date", "value"])
+    else:
+        r = _get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={ticker}&cosd={start}")
+        df = pd.read_csv(io.StringIO(r.text)).iloc[:, :2]
+        df.columns = ["date", "value"]  # header is DATE or observation_date depending on FRED version
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")  # FRED marks missing values as "."
     df = df.dropna()
     return pd.Series(df["value"].values, index=pd.to_datetime(df["date"])).sort_index()
+
+
+def fetch_bls(ticker: str, start: str) -> pd.Series:
+    """BLS public API v1 (no key needed), monthly series dated on the 1st of the month."""
+    r = _get(f"https://api.bls.gov/publicAPI/v1/timeseries/data/{ticker}")
+    js = r.json()
+    if js.get("status") != "REQUEST_SUCCEEDED":
+        raise RuntimeError(f"BLS: {js.get('status')} {js.get('message')}")
+    rows = [(pd.Timestamp(int(d["year"]), int(d["period"][1:]), 1), float(d["value"]))
+            for d in js["Results"]["series"][0]["data"]
+            if d["period"].startswith("M") and d["period"] != "M13" and d["value"] not in ("-", "")]
+    s = pd.Series(dict(rows)).sort_index()
+    return s[s.index >= pd.Timestamp(start) - pd.offsets.MonthBegin(1)]
 
 
 def fetch_yfinance(ticker: str, start: str) -> pd.Series:
@@ -478,7 +514,7 @@ def fetch_metalcharts(ticker: str, start: str) -> pd.Series:
     raise NotImplementedError("MetalCharts request format not configured yet")
 
 
-FETCHERS = {"fred": fetch_fred, "yfinance": fetch_yfinance, "metalcharts": fetch_metalcharts}
+FETCHERS = {"fred": fetch_fred, "bls": fetch_bls, "yfinance": fetch_yfinance, "metalcharts": fetch_metalcharts}
 
 
 def source_col(market: str, src: dict) -> str:
