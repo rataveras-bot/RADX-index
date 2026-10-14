@@ -1,12 +1,12 @@
 {
-  "updated": "2026-10-13T23:02:42+00:00",
+  "updated": "2026-10-14T18:49:24+00:00",
   "log": [
     {
       "market": "COPPER",
       "source": "yfinance:HG=F",
       "status": "ok",
-      "last": "2026-10-13",
-      "value": 6.73
+      "last": "2026-10-14",
+      "value": 6.6205
     },
     {
       "market": "ZINC",
@@ -16,7 +16,7 @@
     {
       "market": "ZINC",
       "source": "fred:PZINCUSDM",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: 400 Client Error: Bad Request for url: https://api.stlouisfed.org/fred/series/observations?series_id=PZINCUSDM&api_key=e16784f10e5a8b3b47feb4ce08378a70+&file_ty"
     },
     {
       "market": "TIN",
@@ -26,7 +26,7 @@
     {
       "market": "TIN",
       "source": "fred:PTINUSDM",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "LEAD",
@@ -36,48 +36,55 @@
     {
       "market": "LEAD",
       "source": "fred:PLEADUSDM",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "NATGAS",
       "source": "yfinance:NG=F",
       "status": "ok",
-      "last": "2026-10-13",
-      "value": 3.319
+      "last": "2026-10-14",
+      "value": 3.201
     },
     {
       "market": "NATGAS",
       "source": "fred:DHHNGSP",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "DIESEL",
       "source": "yfinance:HO=F",
       "status": "ok",
-      "last": "2026-10-13",
-      "value": 4.9643
+      "last": "2026-10-14",
+      "value": 4.9111
     },
     {
       "market": "DIESEL",
       "source": "fred:DDFUELNYH",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "BRENT",
       "source": "yfinance:BZ=F",
       "status": "ok",
-      "last": "2026-10-13",
-      "value": 106.260002
+      "last": "2026-10-14",
+      "value": 106.010002
     },
     {
       "market": "BRENT",
       "source": "fred:DCOILBRENTEU",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: skipped, fred unreachable this run"
+    },
+    {
+      "market": "MFG_WAGES",
+      "source": "bls:CES3000000008",
+      "status": "ok",
+      "last": "2026-09-01",
+      "value": 30.21
     },
     {
       "market": "MFG_WAGES",
       "source": "fred:CES3000000008",
-      "status": "error: HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Read timed out. (read timeout=30)"
+      "status": "error: skipped, fred unreachable this run"
     }
   ]
 }
