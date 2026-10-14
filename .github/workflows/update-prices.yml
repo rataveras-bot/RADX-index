@@ -30,6 +30,7 @@ jobs:
       - name: Fetch prices
         env:
           METALCHARTS_API_KEY: ${{ secrets.METALCHARTS_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python update_prices.py
 
       - name: Commit data
