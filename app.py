@@ -449,7 +449,7 @@ def load_state() -> tuple[dict, pd.DataFrame]:
 # =============================================================================
 # Market data: fetched by the nightly job (update_prices.py), read by the app
 # =============================================================================
-def _get(url: str, tries: int = 3, timeout: int = 60, **kw) -> requests.Response:
+def _get(url: str, tries: int = 2, timeout: int = 30, **kw) -> requests.Response:
     """GET with retries and back-off; FRED in particular is slow to answer cloud servers."""
     last = None
     for i in range(tries):
@@ -540,9 +540,14 @@ def update_market_data(path: Path = MARKET_PATH, meta_path: Path = MARKET_META_P
     today = pd.Timestamp(today or dt.date.today()).normalize()
     raw = read_market_data(path)
     log = []
+    down = {}  # source -> first error; once a source is unreachable, skip it for the rest of this run
     for market, spec in MARKETS.items():
         for src in spec["sources"]:
             col = source_col(market, src)
+            if src["source"] in down:
+                log.append(dict(market=market, source=f"{src['source']}:{src['ticker']}",
+                                status=f"error: skipped, {src['source']} unreachable this run"))
+                continue
             have = raw[col].dropna() if col in raw.columns else pd.Series(dtype=float)
             start = (have.index.max() - pd.Timedelta(days=30)) if len(have) else today - pd.Timedelta(days=MARKET_BACKFILL_DAYS)
             try:
@@ -557,6 +562,8 @@ def update_market_data(path: Path = MARKET_PATH, meta_path: Path = MARKET_META_P
                 log.append(dict(market=market, source=f"{src['source']}:{src['ticker']}", status="ok",
                                 last=str(s.index.max().date()), value=round(float(s.iloc[-1]), 6)))
             except Exception as e:
+                if isinstance(e, requests.exceptions.RequestException):
+                    down[src["source"]] = e
                 log.append(dict(market=market, source=f"{src['source']}:{src['ticker']}",
                                 status=f"error: {str(e)[:160]}"))
     path.parent.mkdir(parents=True, exist_ok=True)
