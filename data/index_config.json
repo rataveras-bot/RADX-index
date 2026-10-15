@@ -1,0 +1,144 @@
+{
+  "index_name": "Copper-Brass Radiator Cost Index",
+  "ticker": "CBRI",
+  "base_date": "2025-10-13",
+  "base_level": 100.0,
+  "reference_unit_cost": 1000.0,
+  "components": {
+    "Copper": {
+      "unit": "USD/t",
+      "description": "Fin strip and tube stock (C11000/C12200). Proxy: COMEX HG copper.",
+      "live": {
+        "method": "alloy",
+        "parts": [
+          {
+            "market": "COPPER",
+            "factor": 2204.62262,
+            "share": 1.0
+          }
+        ]
+      },
+      "color": "#C8743B",
+      "seed": null
+    },
+    "Brass": {
+      "unit": "USD/t",
+      "description": "Header plates, tanks, side plates (CuZn35-37), priced as 65% Cu + 35% Zn.",
+      "live": {
+        "method": "alloy",
+        "parts": [
+          {
+            "market": "COPPER",
+            "factor": 2204.62262,
+            "share": 0.65
+          },
+          {
+            "market": "ZINC",
+            "factor": 1.0,
+            "share": 0.35
+          }
+        ]
+      },
+      "color": "#C9A227",
+      "seed": null
+    },
+    "Solder": {
+      "unit": "USD/t",
+      "description": "Pb-Sn solder, 70/30 by mass, for tube-to-header and tank joints.",
+      "live": {
+        "method": "alloy",
+        "parts": [
+          {
+            "market": "LEAD",
+            "factor": 1.0,
+            "share": 0.7
+          },
+          {
+            "market": "TIN",
+            "factor": 1.0,
+            "share": 0.3
+          }
+        ]
+      },
+      "color": "#7C8A99",
+      "seed": null
+    },
+    "Energy": {
+      "unit": "basket pts",
+      "description": "45% natural gas (ovens), 35% diesel (freight), 20% Brent (oil-linked inputs).",
+      "live": {
+        "method": "basket",
+        "parts": [
+          {
+            "market": "NATGAS",
+            "share": 0.45
+          },
+          {
+            "market": "DIESEL",
+            "share": 0.35
+          },
+          {
+            "market": "BRENT",
+            "share": 0.2
+          }
+        ]
+      },
+      "color": "#2F6F8F",
+      "seed": null
+    },
+    "Labor": {
+      "unit": "USD/hr",
+      "description": "Direct wages. Proxy: BLS manufacturing avg hourly earnings (CES3000000008).",
+      "live": {
+        "method": "alloy",
+        "parts": [
+          {
+            "market": "MFG_WAGES",
+            "factor": 1.0,
+            "share": 1.0
+          }
+        ]
+      },
+      "color": "#4E8F5A",
+      "seed": null
+    }
+  },
+  "data_status": {
+    "Copper": "live",
+    "Brass": "live",
+    "Solder": "live",
+    "Energy": "live",
+    "Labor": "live"
+  },
+  "versions": [
+    {
+      "id": 1,
+      "effective_date": "2025-10-13",
+      "weights": {
+        "Copper": 42.0,
+        "Brass": 20.0,
+        "Solder": 8.0,
+        "Energy": 10.0,
+        "Labor": 20.0
+      },
+      "note": "Initial baseline weights",
+      "mode": "base",
+      "created": "2025-10-13T00:00:00"
+    },
+    {
+      "id": 2,
+      "effective_date": "2026-10-13",
+      "weights": {
+        "Copper": 44.0,
+        "Brass": 20.0,
+        "Solder": 8.0,
+        "Energy": 8.0,
+        "Labor": 20.0
+      },
+      "note": "Rebalance",
+      "mode": "chain",
+      "created": "2026-10-13T00:00:00"
+    }
+  ],
+  "archived_versions": []
+}
