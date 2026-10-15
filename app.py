@@ -35,6 +35,8 @@ PRICES_PATH = APP_DIR / "price_history.csv"
 DATA_DIR = APP_DIR / "data"                     # market data, written by the nightly GitHub job
 MARKET_PATH = DATA_DIR / "market_data.csv"
 MARKET_META_PATH = DATA_DIR / "market_meta.json"
+SEED_CONFIG_PATH = DATA_DIR / "index_config.json"   # settings kept in git, so app restarts can't lose them
+DEFAULT_BASE_DATE = "2025-10-13"
 MARKET_BACKFILL_DAYS = 420
 METALCHARTS_URL = "https://metalcharts.org"
 
@@ -247,6 +249,10 @@ ES = {
         "{n} fuente(s) fallaron en la última actualización; se usó su fuente de respaldo.",
     "never": "nunca",
     "Download index_config.json": "Descargar index_config.json",
+    "To keep weight changes after the app restarts, upload this file to the data folder of the GitHub repo "
+    "(replace data/index_config.json).":
+        "Para conservar los cambios de pesos cuando la app se reinicie, suba este archivo a la carpeta data del "
+        "repositorio de GitHub (reemplace data/index_config.json).",
     "Download price_history.csv": "Descargar price_history.csv",
     "Restore index_config.json": "Restaurar index_config.json", "Restore config": "Restaurar configuración",
     "Not a valid index config.": "No es una configuración de índice válida.",
@@ -405,7 +411,8 @@ def new_default_config(base_date: pd.Timestamp) -> dict:
 
 def history_calendar(end=None) -> pd.DatetimeIndex:
     end = pd.Timestamp(end or dt.date.today()).normalize()
-    return pd.bdate_range(end - pd.Timedelta(days=HISTORY_DAYS), end)
+    start = min(pd.Timestamp(DEFAULT_BASE_DATE), end - pd.Timedelta(days=HISTORY_DAYS))
+    return pd.bdate_range(start, end)
 
 
 def ensure_columns(cfg: dict, prices: pd.DataFrame) -> pd.DataFrame:
@@ -439,9 +446,19 @@ def load_state() -> tuple[dict, pd.DataFrame]:
     prices = None
     if PRICES_PATH.exists():
         prices = pd.read_csv(PRICES_PATH, index_col="date", parse_dates=["date"]).sort_index()
+    if SEED_CONFIG_PATH.exists():  # settings kept in git win on a fresh container or when that file changes
+        import hashlib
+        seed_txt = SEED_CONFIG_PATH.read_text()
+        seed_hash = hashlib.sha256(seed_txt.encode()).hexdigest()[:16]
+        if cfg is None or cfg.get("seed_hash") != seed_hash:
+            cfg = json.loads(seed_txt)
+            cfg["seed_hash"] = seed_hash
+            cfg.setdefault("data_status", {n: "simulated" for n in cfg["components"]})
+            cfg.setdefault("archived_versions", [])
+            save_config(cfg)
     if cfg is None:
         dates = history_calendar() if prices is None else prices.index
-        cfg = new_default_config(dates[0])
+        cfg = new_default_config(max(pd.Timestamp(DEFAULT_BASE_DATE), dates[0]))
         if prices is None:
             prices = generate_default_mock(dates)
         save_config(cfg)
@@ -642,17 +659,25 @@ def overlay_live(cfg: dict, prices: pd.DataFrame) -> pd.DataFrame:
     live = build_live_prices(cfg, raw).dropna(how="all")
     if live.empty:
         return prices
-    end = max(prices.index.max(), live.index.max())
-    cal = prices.index.union(pd.bdate_range(prices.index.min(), end))
+    live_end = live.index.max()
+    cal = prices.index.union(pd.bdate_range(min(prices.index.min(), live.index.min()), live_end))
     out = prices.reindex(cal).ffill()
     for name in live.columns:
         if cfg["data_status"].get(name) == "manual":
             continue
         s = live[name].dropna()
-        merged = s.reindex(cal).combine_first(out[name]) if name in out else s.reindex(cal)
-        out[name] = merged.ffill()
+        ser = s.reindex(cal).ffill()  # real prices carry forward between prints, never back to demo data
+        before = cal < s.index.min()
+        if name in out and before.any():
+            ser[before] = out.loc[before, name]
+        out[name] = ser
         cfg["data_status"][name] = "live"
-    return out
+    # The index ends on the last real market date, unless your own uploaded prices go further.
+    end = live_end
+    for name, status in cfg["data_status"].items():
+        if status == "manual" and name in prices and prices[name].last_valid_index() is not None:
+            end = max(end, prices[name].last_valid_index())
+    return out.loc[:end]
 
 
 def market_status(raw: pd.DataFrame) -> pd.DataFrame:
@@ -1233,6 +1258,8 @@ def sidebar_admin(cfg: dict, prices: pd.DataFrame):
                 st.dataframe(pd.DataFrame(errs)[["market", "source", "status"]], hide_index=True)
         st.download_button(t("Download index_config.json"), json.dumps(cfg, indent=2, default=str).encode(),
                            "index_config.json", "application/json")
+        st.caption(t("To keep weight changes after the app restarts, upload this file to the data folder of "
+                     "the GitHub repo (replace data/index_config.json)."))
         st.download_button(t("Download price_history.csv"), prices.rename_axis("date").to_csv().encode(),
                            "price_history.csv", "text/csv")
         upc = st.file_uploader(t("Restore index_config.json"), type=["json"], key="cfg_up")
