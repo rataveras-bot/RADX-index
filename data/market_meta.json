@@ -1,12 +1,12 @@
 {
-  "updated": "2026-10-20T23:00:36+00:00",
+  "updated": "2026-10-21T23:00:56+00:00",
   "log": [
     {
       "market": "COPPER",
       "source": "yfinance:HG=F",
       "status": "ok",
-      "last": "2026-10-20",
-      "value": 6.618
+      "last": "2026-10-21",
+      "value": 6.5555
     },
     {
       "market": "ZINC",
@@ -16,9 +16,7 @@
     {
       "market": "ZINC",
       "source": "fred:PZINCUSDM",
-      "status": "ok",
-      "last": "2026-07-01",
-      "value": 3593.775
+      "status": "error: Expecting value: line 1 column 1 (char 0)"
     },
     {
       "market": "TIN",
@@ -28,9 +26,7 @@
     {
       "market": "TIN",
       "source": "fred:PTINUSDM",
-      "status": "ok",
-      "last": "2026-07-01",
-      "value": 52881.998636
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "LEAD",
@@ -40,51 +36,43 @@
     {
       "market": "LEAD",
       "source": "fred:PLEADUSDM",
-      "status": "ok",
-      "last": "2026-07-01",
-      "value": 1842.516364
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "NATGAS",
       "source": "yfinance:NG=F",
       "status": "ok",
-      "last": "2026-10-20",
-      "value": 2.996
+      "last": "2026-10-21",
+      "value": 2.776
     },
     {
       "market": "NATGAS",
       "source": "fred:DHHNGSP",
-      "status": "ok",
-      "last": "2026-10-14",
-      "value": 3.22
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "DIESEL",
       "source": "yfinance:HO=F",
       "status": "ok",
-      "last": "2026-10-20",
-      "value": 4.7521
+      "last": "2026-10-21",
+      "value": 4.6141
     },
     {
       "market": "DIESEL",
       "source": "fred:DDFUELNYH",
-      "status": "ok",
-      "last": "2026-10-14",
-      "value": 5.066
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "BRENT",
       "source": "yfinance:BZ=F",
       "status": "ok",
-      "last": "2026-10-20",
-      "value": 109.160004
+      "last": "2026-10-21",
+      "value": 110.050003
     },
     {
       "market": "BRENT",
       "source": "fred:DCOILBRENTEU",
-      "status": "ok",
-      "last": "2026-10-14",
-      "value": 126.55
+      "status": "error: skipped, fred unreachable this run"
     },
     {
       "market": "MFG_WAGES",
@@ -96,9 +84,7 @@
     {
       "market": "MFG_WAGES",
       "source": "fred:CES3000000008",
-      "status": "ok",
-      "last": "2026-09-01",
-      "value": 30.21
+      "status": "error: skipped, fred unreachable this run"
     }
   ]
 }
