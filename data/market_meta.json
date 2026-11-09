@@ -1,12 +1,12 @@
 {
-  "updated": "2026-11-06T23:14:09+00:00",
+  "updated": "2026-11-09T23:15:55+00:00",
   "log": [
     {
       "market": "COPPER",
       "source": "yfinance:HG=F",
       "status": "ok",
-      "last": "2026-11-06",
-      "value": 6.26
+      "last": "2026-11-09",
+      "value": 6.385
     },
     {
       "market": "ZINC",
@@ -48,8 +48,8 @@
       "market": "NATGAS",
       "source": "yfinance:NG=F",
       "status": "ok",
-      "last": "2026-11-06",
-      "value": 3.003
+      "last": "2026-11-09",
+      "value": 3.199
     },
     {
       "market": "NATGAS",
@@ -62,8 +62,8 @@
       "market": "DIESEL",
       "source": "yfinance:HO=F",
       "status": "ok",
-      "last": "2026-11-06",
-      "value": 4.343
+      "last": "2026-11-09",
+      "value": 4.1962
     },
     {
       "market": "DIESEL",
@@ -76,8 +76,8 @@
       "market": "BRENT",
       "source": "yfinance:BZ=F",
       "status": "ok",
-      "last": "2026-11-06",
-      "value": 97.760002
+      "last": "2026-11-09",
+      "value": 92.449997
     },
     {
       "market": "BRENT",
